@@ -14,7 +14,7 @@ http://www.pololu.com/docs/0J46
 #include <stdio.h>
 
 //Comment out to run in non-USB mode.
-#define USB_MODE 1
+//#define USB_MODE 1
 
 #define TX_BUFF_LEN 100
 #define RX_BUFF_LEN 4
@@ -24,11 +24,22 @@ http://www.pololu.com/docs/0J46
 #define GAP_TIME 1000
 #define SPACE_TIME 1000
 
+
+
 typedef enum { false = 0, true = 1} bool;
 typedef enum MorseSymbol{INVALID = 0, DOT = 1, DASH = 2, SPACE = 3} morse_t;
 
 morse_t txMessage[TX_BUFF_LEN] = {0};
-uint8 txIndex;
+
+void addToTxMessage(morse_t m);
+morse_t popFromTxMessage(void);
+
+void debugPrintByte(uint8 george);
+
+uint8 txMessageStart = 0;
+uint8 txMessageEnd = 0;
+
+
 bool txReadyToSend = false;
 
 morse_t rxMessage[RX_BUFF_LEN] = {0};
@@ -38,6 +49,115 @@ uint32 startTime;
 uint32 symbolTime;
 bool symbolInProgress = false;
 bool gapInProgress = false;
+
+
+/*
+ * P1_2 = DOT
+ * P1_1 = DASH
+ * P1_7 = SPACE
+ * P1_6 = SEND
+ *
+ */
+ 
+//Note: For port interrupts, MUST clear the module interrupt flag before
+//the CPU interrupt flag.
+ISR(P1INT, 0)
+{
+	if(P1IFG & 0x2) //Pin 1
+	{
+		P1IFG &= ~0x2; //Clear flag
+		addToTxMessage(DASH);
+		
+	}
+	
+	if(P1IFG & 0x4) //Pin 2
+	{
+		P1IFG &= ~0x4; //Clear flag
+		addToTxMessage(DOT);
+	}
+	
+	if(P1IFG & 0x40) //Pin 6
+	{
+		P1IFG &= ~0x40; //Clear flag
+		txReadyToSend = true;
+	}
+	
+	if(P1IFG & 0x80) //Pin 7
+	{
+		P1IFG &= ~0x80; //Clear flag
+		addToTxMessage(SPACE);
+	}
+	
+	IRCON2 &= ~P1IF; //Clear CPU interrupt flag
+}
+
+
+uint8 nextSymbol(uint8 index)
+{
+	return (index + 1) % TX_BUFF_LEN;
+}
+
+void addToTxMessage(morse_t m)
+{
+	if(nextSymbol(txMessageEnd) != txMessageStart)
+	{
+		txMessage[txMessageEnd] = m;
+		txMessageEnd = nextSymbol(txMessageEnd);
+		
+	}
+}
+morse_t popFromTxMessage(void)
+{
+	if(txMessageStart != txMessageEnd)
+	{
+		morse_t returnVal = txMessage[txMessageStart];
+		txMessageStart = nextSymbol(txMessageStart);
+		return returnVal;
+	}
+	else return INVALID;
+}
+
+
+void transmit(void)
+{
+	bool valid = true;
+	uint8 byteToSend = 0;
+	
+	
+	while(valid == true)
+	{
+		uint8 i;
+		morse_t temp;
+		byteToSend = 0;
+		for(i = 0; i < 4; i++)
+		{
+			temp = popFromTxMessage();
+			byteToSend |= temp << (2*i);
+			
+			if(temp == INVALID) valid = false;
+		}
+		
+		if(radioComTxAvailable())
+		{
+			radioComTxSendByte(byteToSend);
+			debugPrintByte(byteToSend);
+		}
+			
+		
+	}
+}
+
+void setupInterrupts(void)
+{
+	IRCON2 &= ~P1IF; //Clear P1 interrupt flag.
+	
+	//Interrupt Port 1, Pin 1, 2, 6, 7 interrupts.
+	P1IEN |= 0xC6;
+	
+	IEN2 |= 0x10; //Enable Port 1 interrupts.
+	IEN0 |= EA; //Set global interrupt enable.
+}
+
 
 void buzzerOn()
 {
@@ -85,15 +205,12 @@ void initTxMessage()
 	{
 		txMessage[i] = 0;
 	}
-	txIndex = 0;
+	
+	txMessageStart = 0;
+	txMessageEnd = 0;
 	txReadyToSend = false;
 }
 
-void newTxSymbol(morse_t m)
-{
-	txMessage[txIndex] = m;
-	txIndex++;
-}
 
 void receiveMessage(uint8 message)
 {
@@ -144,6 +261,8 @@ void main()
 	initTxMessage();
 	initRxMessage();
 	
+	setupInterrupts();
+	
 	
 	while(1)
 	{
@@ -176,7 +295,7 @@ void main()
 			{
 				if(radioComTxAvailable())
 				{
-					radioComTxSendByte(usbComRxReceiveByte());
+					//radioComTxSendByte(usbComRxReceiveByte());
 				}
 			}
 		}
@@ -185,8 +304,15 @@ void main()
 		{
 			receiveMessage(radioComRxReceiveByte());
 		}
+		
 			
 		#endif
+		
+		if(txReadyToSend) 
+		{
+			transmit();
+			txReadyToSend = false;
+		}
 		
 		radioComTxService();
 		
