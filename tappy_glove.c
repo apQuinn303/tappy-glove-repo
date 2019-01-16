@@ -13,12 +13,15 @@ http://www.pololu.com/docs/0J46
 #include <radio_link.h>
 #include <stdio.h>
 
+//Comment out to run in non-USB mode.
+#define USB_MODE 1
+
 #define TX_BUFF_LEN 100
 #define RX_BUFF_LEN 4
 
-#define DOT_TIME 250
-#define DASH_TIME 500
-#define GAP_TIME 250
+#define DOT_TIME 1000
+#define DASH_TIME 2000
+#define GAP_TIME 1000
 #define SPACE_TIME 1000
 
 typedef enum { false = 0, true = 1} bool;
@@ -54,6 +57,27 @@ void initRxMessage()
 	rxIndex = RX_BUFF_LEN; 
 }
 
+
+void debugPrintByte(uint8 george)
+{
+	if(usbComTxAvailable()) 
+		{
+			int8 j;
+			usbComTxSendByte('0');
+			usbComTxSendByte('b');
+			
+			for(j = 7; j >= 0 ; j--)
+			{ 
+				if((george >> j) & 0x1)
+					usbComTxSendByte('1');
+				else
+					usbComTxSendByte('0');
+			}
+			
+			usbComTxSendByte('\n');
+		}
+}
+
 void initTxMessage()
 {
 	uint8 i;
@@ -77,9 +101,15 @@ void receiveMessage(uint8 message)
 	rxIndex = 0;
 	for(i = 0; i < RX_BUFF_LEN; i++)
 	{
-		rxMessage[i] = (message >> 2*i) & 0x3;
+		uint8 george = (message >> 2*i) & 0x3;
+		rxMessage[i] = george;
+		debugPrintByte(george);
+		
 	}
 }
+
+
+
 
 void processSymbol(morse_t m)
 {
@@ -91,11 +121,14 @@ void processSymbol(morse_t m)
 	case DOT:
 		symbolTime = DOT_TIME;
 		buzzerOn();
+		break;
 	case DASH:
 		symbolTime = DASH_TIME;
 		buzzerOn();
+		break;
 	case SPACE:
 		symbolTime = SPACE_TIME;
+		break;
 	}
 	symbolInProgress = true;
 	
@@ -110,6 +143,7 @@ void main()
 
 	initTxMessage();
 	initRxMessage();
+	
 	
 	while(1)
 	{
@@ -132,15 +166,27 @@ void main()
 			rxIndex++;
 		}
 
-		
-		//if(radioComRxAvailable() && rxIndex == RX_BUFF_LEN)
+		#ifdef USB_MODE
 		if(usbComRxAvailable() && rxIndex == RX_BUFF_LEN)
 		{
-			//receiveMessage(radioComRxReceiveByte());
-			receiveMessage(usbComRxReceiveByte());
-			
-			
+			uint8 modeDifferentiation = usbComRxReceiveByte();
+			if(modeDifferentiation == 'r')
+				receiveMessage(usbComRxReceiveByte());
+			else	
+			{
+				if(radioComTxAvailable())
+				{
+					radioComTxSendByte(usbComRxReceiveByte());
+				}
+			}
 		}
+		#else
+		if(radioComRxAvailable() && rxIndex == RX_BUFF_LEN)
+		{
+			receiveMessage(radioComRxReceiveByte());
+		}
+			
+		#endif
 		
 		radioComTxService();
 		
