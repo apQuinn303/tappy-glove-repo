@@ -39,11 +39,13 @@ bool gapInProgress = false;
 void buzzerOn()
 {
 	setDigitalOutput(10,HIGH);
+	LED_YELLOW(1);
 }
 
 void buzzerOff()
 {
 	setDigitalOutput(10,LOW);
+	LED_YELLOW(0);
 }
 
 void initRxMessage()
@@ -141,6 +143,12 @@ void main()
 		}
 		
 		radioComTxService();
+		
+		//Make sure we can strap to the bootloader if necessary.
+		boardService();
+		
+		//Run USB Communication Tasks
+		usbComService();
 	}
 }
 
