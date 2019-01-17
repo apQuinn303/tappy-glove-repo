@@ -26,56 +26,64 @@ http://www.pololu.com/docs/0J46
 
 #define HEARTBEAT_TIME 250
 
-uint32 lastHeartbeatTime = 0;
+
 
 
 typedef enum { false = 0, true = 1} bool;
 typedef enum MorseSymbol{INVALID = 0, DOT = 1, DASH = 2, SPACE = 3} morse_t;
 
+
+/*** TRANSMIT MESSAGE BUFFER ***/
+
 morse_t txMessage[TX_BUFF_LEN] = {0};
 
+void initTxMessage(void);
 void addToTxMessage(morse_t m);
 morse_t popFromTxMessage(void);
-void initTxMessage(void);
-
-void debugPrintByte(uint8 george);
+uint8 nextSymbol(uint8 index);
 
 uint8 txMessageStart = 0;
 uint8 txMessageEnd = 0;
 
-
 bool txReadyToSend = false;
+
+/*** DEBUG FUNCTIONS ***/
+
+void debugPrintByte(uint8 george);
+
+/*** RECEIVE MESSAGE BUFFER ***/
 
 morse_t rxMessage[RX_BUFF_LEN] = {0};
 uint8 rxIndex;
 
+void initRxMessage(void);
+	
+/*** TIMER VARIABLES ***/
+
+uint32 lastHeartbeatTime = 0;
 uint32 startTime;
 uint32 symbolTime;
 bool symbolInProgress = false;
 bool gapInProgress = false;
 
+/*** OTHER FORWARD DECLARATIONS ***/
 
+
+void setupInterrupts(void);
+void buzzerOff(void);
+void buzzerOn(void);
 /*
  * P1_2 = DOT
  * P1_1 = DASH
  * P1_7 = SPACE
  * P1_6 = SEND
- *
  */
  
 //Note: For port interrupts, MUST clear the module interrupt flag before
 //the CPU interrupt flag.
 ISR(P1INT, 0)
-{
-	if(P1IFG & 0x4) //Pin 2
-	{
-		P1IFG &= ~0x4; //Clear flag
-		addToTxMessage(DOT);
-		//debugPrintByte(129);
-		IRCON2 &= ~P1IF; //Clear CPU interrupt flag
-		return;
-	}
-	
+{	
+
 	if(P1IFG & 0x2) //Pin 1
 	{
 		P1IFG &= ~0x2; //Clear flag
@@ -85,6 +93,16 @@ ISR(P1INT, 0)
 		return;
 	}
 	
+	if(P1IFG & 0x4) //Pin 2
+	{
+		P1IFG &= ~0x4; //Clear flag
+		addToTxMessage(DOT);
+		//debugPrintByte(129);
+		IRCON2 &= ~P1IF; //Clear CPU interrupt flag
+		return;
+	}
+	
+
 	if(P1IFG & 0x40) //Pin 6
 	{
 		P1IFG &= ~0x40; //Clear flag
@@ -120,6 +138,7 @@ void addToTxMessage(morse_t m)
 		
 	}
 }
+
 morse_t popFromTxMessage(void)
 {
 	if(txMessageStart != txMessageEnd)
@@ -284,6 +303,7 @@ void main()
 	
 	while(1)
 	{
+		/*** TIMER UPDATES ***/
 		if(getMs() - lastHeartbeatTime > HEARTBEAT_TIME)
 		{
 			LED_RED_TOGGLE();
@@ -309,6 +329,8 @@ void main()
 			rxIndex++;
 		}
 
+		/*** OTHER SERVICES ***/
+		
 		#ifdef USB_MODE
 		if(usbComRxAvailable() && rxIndex == RX_BUFF_LEN)
 		{
@@ -319,7 +341,7 @@ void main()
 			{
 				if(radioComTxAvailable())
 				{
-					//radioComTxSendByte(usbComRxReceiveByte());
+					radioComTxSendByte(usbComRxReceiveByte());
 				}
 			}
 		}
@@ -333,6 +355,7 @@ void main()
 			
 		#endif
 		
+		//Transmit data that was input via buttons.
 		if(txReadyToSend) 
 		{
 			transmit();
