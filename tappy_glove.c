@@ -36,6 +36,7 @@ morse_t txMessage[TX_BUFF_LEN] = {0};
 
 void addToTxMessage(morse_t m);
 morse_t popFromTxMessage(void);
+void initTxMessage(void);
 
 void debugPrintByte(uint8 george);
 
@@ -66,29 +67,39 @@ bool gapInProgress = false;
 //the CPU interrupt flag.
 ISR(P1INT, 0)
 {
-	if(P1IFG & 0x2) //Pin 1
-	{
-		P1IFG &= ~0x2; //Clear flag
-		addToTxMessage(DASH);
-		
-	}
-	
 	if(P1IFG & 0x4) //Pin 2
 	{
 		P1IFG &= ~0x4; //Clear flag
 		addToTxMessage(DOT);
+		//debugPrintByte(129);
+		IRCON2 &= ~P1IF; //Clear CPU interrupt flag
+		return;
+	}
+	
+	if(P1IFG & 0x2) //Pin 1
+	{
+		P1IFG &= ~0x2; //Clear flag
+		addToTxMessage(DASH);
+		//debugPrintByte(130);
+		IRCON2 &= ~P1IF; //Clear CPU interrupt flag
+		return;
 	}
 	
 	if(P1IFG & 0x40) //Pin 6
 	{
 		P1IFG &= ~0x40; //Clear flag
 		txReadyToSend = true;
+		IRCON2 &= ~P1IF; //Clear CPU interrupt flag
+		return;
 	}
 	
 	if(P1IFG & 0x80) //Pin 7
 	{
 		P1IFG &= ~0x80; //Clear flag
 		addToTxMessage(SPACE);
+		//debugPrintByte(131);
+		IRCON2 &= ~P1IF; //Clear CPU interrupt flag
+		return;
 	}
 	
 	IRCON2 &= ~P1IF; //Clear CPU interrupt flag
@@ -145,10 +156,11 @@ void transmit(void)
 		{
 			radioComTxSendByte(byteToSend);
 			debugPrintByte(byteToSend);
-		}
-			
-		
+		}	
 	}
+	
+	initTxMessage();
+	
 }
 
 void setupInterrupts(void)
