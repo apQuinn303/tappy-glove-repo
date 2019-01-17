@@ -24,6 +24,9 @@ http://www.pololu.com/docs/0J46
 #define GAP_TIME 1000
 #define SPACE_TIME 1000
 
+#define HEARTBEAT_TIME 250
+
+uint32 lastHeartbeatTime = 0;
 
 
 typedef enum { false = 0, true = 1} bool;
@@ -111,6 +114,7 @@ morse_t popFromTxMessage(void)
 	if(txMessageStart != txMessageEnd)
 	{
 		morse_t returnVal = txMessage[txMessageStart];
+		txMessage[txMessageStart] = INVALID;
 		txMessageStart = nextSymbol(txMessageStart);
 		return returnVal;
 	}
@@ -137,7 +141,7 @@ void transmit(void)
 			if(temp == INVALID) valid = false;
 		}
 		
-		if(radioComTxAvailable())
+		if(radioComTxAvailable() && byteToSend != 0)
 		{
 			radioComTxSendByte(byteToSend);
 			debugPrintByte(byteToSend);
@@ -257,15 +261,23 @@ void main()
 {
     systemInit();
     usbInit();
+	radioComInit();
 
 	initTxMessage();
 	initRxMessage();
 	
 	setupInterrupts();
 	
+	buzzerOff();
 	
 	while(1)
 	{
+		if(getMs() - lastHeartbeatTime > HEARTBEAT_TIME)
+		{
+			LED_RED_TOGGLE();
+			lastHeartbeatTime = getMs();
+		}
+		
 		if(symbolInProgress &&((getMs() - startTime) > symbolTime))
 		{
 			buzzerOff();
@@ -300,7 +312,8 @@ void main()
 			}
 		}
 		#else
-		if(radioComRxAvailable() && rxIndex == RX_BUFF_LEN)
+		if(radioComRxAvailable() && rxIndex == RX_BUFF_LEN 
+			&& !symbolInProgress && !gapInProgress)
 		{
 			receiveMessage(radioComRxReceiveByte());
 		}
